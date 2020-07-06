@@ -18,4 +18,4 @@ rt <- lat_lng(rt)
 rt <- data.frame(lapply(rt, as.character), stringsAsFactors = FALSE)
 
 # Save as csv file
-write_csv(rt, "~/Documents/Grad_School_American/STAT_613/Project/r_tweets.csv")
+write_csv(rt, "./r_tweets.csv")
