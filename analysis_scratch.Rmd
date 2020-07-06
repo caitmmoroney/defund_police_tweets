@@ -1,0 +1,257 @@
+---
+title: "Final Project Analysis"
+author: "Caitlin Moroney"
+date: "7/6/2020"
+output: html_document
+---
+
+```{r, message=FALSE}
+library(tidyverse)
+library(tidytext)
+library(topicmodels)
+library(textstem)
+```
+
+# Load Data
+
+```{r}
+tweets <- read_csv("r_tweets.csv", col_types = "ddTcccdddcllddddccccccccccccccccdcTcdddccdddccldcTcdddccdddcclccccccccccccccldddddTlcccccccdd")
+```
+
+# Data Wrangling
+
+## Clean hashtags
+
+```{r}
+tweets %>%
+  mutate(hashtags = str_replace_all(hashtags, "[,c()\\\"]+", ""),
+         mentions_user_id = str_replace_all(mentions_user_id, "[,c()\\\"]+", ""),
+         mentions_screen_name = str_replace_all(mentions_screen_name, "[,c()\\\"]+", "")) %>%
+  select(-c(geo_coords, coords_coords, bbox_coords)) ->
+  tweets
+```
+
+## Grab US tweets
+
+```{r}
+tweets %>%
+  filter(country_code == "US") ->
+  us_tweets
+```
+
+## Filter out tweets without location
+
+```{r}
+tweets %>%
+  filter(!is.na(lat)) ->
+  tweets
+```
+
+## Only distinct US/all tweets
+
+```{r}
+distinct_us_tweets <- us_tweets %>%
+  distinct(text, .keep_all = TRUE)
+
+distinct_tweets <- tweets %>%
+  distinct(text, .keep_all = TRUE)
+```
+
+## Remove Portland Police Activity Log account
+
+```{r}
+us_tweets %>%
+  filter(screen_name != "pdxpolicelog") ->
+  us_tweets
+``` 
+
+## Normalize text (lemmatize, remove punctuation & stop words)
+
+```{r}
+# load stop words from tidytext package
+data("stop_words")
+
+us_tweets %>%
+  mutate(lemma_text = lemmatize_strings(text)) %>%
+  unnest_tokens(word, lemma_text, token = "tweets", strip_url = TRUE) %>%
+  anti_join(stop_words, by = "word") %>%
+  filter(!word %in% str_remove_all(stop_words$word, "'")) ->
+  word_tokens
+
+word_tok_counts <- word_tokens %>%
+  count(text, word)
+
+word_tok_counts %>%
+  bind_tf_idf(word, text, n) ->
+  word_tok_counts
+```
+
+```{r}
+word_tok_counts %>%
+  cast_dtm(text, word, n) ->
+  dtm
+
+dtm
+
+lda_model <- LDA(dtm, k = 5)
+```
+
+```{r}
+topic_word_matrix <- tidy(lda_model, matrix = "beta")
+topic_word_matrix
+
+top_terms <- topic_word_matrix %>%
+  group_by(topic) %>%
+  top_n(10, beta) %>%
+  ungroup() %>%
+  arrange(topic, -beta)
+```
+
+```{r}
+top_terms %>%
+  mutate(term = reorder_within(term, beta, topic)) %>%
+  ggplot(aes(x = term, y = beta, fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic, scales = "free") +
+  coord_flip() +
+  scale_x_reordered() +
+  ylab("Weight") +
+  xlab("Term") +
+  ggtitle("Term Weights by Topic")
+```
+
+```{r}
+word_tokens %>%
+  count(word) ->
+  word_counts
+
+top_10_words <- word_counts %>%
+  top_n(20, n)
+
+top_10_words %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(x = word, y = n, fill = word)) +
+  geom_col(show.legend = FALSE) +
+  scale_y_log10() +
+  xlab("Word") +
+  ylab("Count") +
+  coord_flip()
+```
+
+```{r}
+us_tweets %>%
+  filter(!is.na(hashtags)) %>%
+  unnest_tokens(word, text, token = "tweets") %>%
+  filter(str_detect(word, "^#")) %>%
+  count(word) ->
+  hashtag_counts
+
+top_20_hash <- hashtag_counts %>%
+  top_n(20, n)
+
+top_20_hash %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(x = word, y = n, fill = word)) +
+  geom_col(show.legend = FALSE) +
+  scale_y_log10() +
+  xlab("Hashtag") +
+  ylab("Count") +
+  coord_flip()
+```
+
+```{r}
+#library(DataCombine)
+emojis <- read.csv("emoji_dictionary.csv", header = TRUE)
+emoji_names <- emojis %>%
+  mutate(Name = str_replace_all(Name, " ", ""))
+list_emoji_names <- emoji_names$Name
+
+us_tweets$byte_text <- iconv(us_tweets$text, from = "latin1", to = "ascii", sub = "byte")
+```
+
+```{r}
+replaced_text <- c()
+for (i in 1:nrow(us_tweets)) {
+  tweet <- us_tweets$byte_text[i]
+  for (i in 1:nrow(emojis)) {
+    pattern <- str_c("\\Q", emojis$R_Encoding[i], "\\E", collapse = "")
+    tweet <- str_replace_all(tweet, pattern, emojis$Name[i])
+  }
+  replaced_text <- append(replaced_text, tweet)
+}
+
+us_tweets$emoji_text <- replaced_text
+```
+
+```{r}
+us_tweets %>%
+  unnest_tokens(word, emoji_text, token = "words", to_lower = FALSE) %>%
+  filter(word %in% list_emoji_names) %>%
+  count(word) ->
+  emoji_counts
+```
+
+## Grab top 20 emojis
+
+```{r}
+top_20_emoji <- emoji_counts %>%
+  top_n(20, n)
+```
+
+## Convert back to emoji text & grab top 10 emojis
+
+```{r}
+top_20_names <- c()
+for (i in 1:nrow(top_20_emoji)) {
+  emoji_name <- str_c(" ", top_20_emoji$word[i], " ", collapse = "")
+  top_20_names <- append(top_20_names, emoji_name)
+}
+
+top_20_emoji$Name <- top_20_names
+
+top_20_emoji %>%
+  inner_join(emojis, by = "Name") ->
+  top_20_emoji
+
+#top_20_emoji$emoji_symbol <- iconv(top_20_emoji$R_Encoding, from = "ascii", to = "latin1", sub = "byte")
+
+top_10_emoji <- top_20_emoji %>%
+  top_n(10, n)
+```
+
+## Plot top 20 emojis
+```{r}
+top_20_emoji %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(x = word, y = n, fill = word)) +
+  geom_col(show.legend = FALSE) +
+  scale_y_log10() +
+  xlab("Emoji") +
+  ylab("Count") +
+  coord_flip()
+```
+
+## Plot top 10 emojis
+```{r}
+top_10_emoji %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(x = word, y = n, fill = word)) +
+  geom_col(show.legend = FALSE) +
+  scale_y_log10() +
+  xlab("Emoji") +
+  ylab("Count") +
+  coord_flip()
+```
+## Plot tweets on US states map
+
+```{r}
+# plot state boundaries
+par(mar = c(0, 0, 0, 0))
+maps::map("state", lwd = 0.25)
+
+# plot lat & long coords on map
+with(us_tweets, points(lng, lat, pch = 20, cex = .75, col = rgb(0, .3, .7, .75)))
+```
+
+
+
