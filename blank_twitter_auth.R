@@ -8,7 +8,7 @@ consumer_secret <- "Your consumer secret here"
 
 ## authenticate via web browser
 token <- create_token(
-  app = "First application - test",
+  app = "Your application name here",
   consumer_key = consumer_key,
   consumer_secret = consumer_secret,
   access_token = access_token,

@@ -86,6 +86,8 @@ word_tok_counts %>%
   word_tok_counts
 ```
 
+# Topic modeling using LDA
+
 ```{r}
 word_tok_counts %>%
   cast_dtm(text, word, n) ->
@@ -95,6 +97,8 @@ dtm
 
 lda_model <- LDA(dtm, k = 5)
 ```
+
+# Obtain top 10 terms per topic
 
 ```{r}
 topic_word_matrix <- tidy(lda_model, matrix = "beta")
@@ -106,6 +110,8 @@ top_terms <- topic_word_matrix %>%
   ungroup() %>%
   arrange(topic, -beta)
 ```
+
+# Plot terms by topic
 
 ```{r}
 top_terms %>%
@@ -120,15 +126,17 @@ top_terms %>%
   ggtitle("Term Weights by Topic")
 ```
 
+# Plot top word frequencies
+
 ```{r}
 word_tokens %>%
   count(word) ->
   word_counts
 
-top_10_words <- word_counts %>%
+top_20_words <- word_counts %>%
   top_n(20, n)
 
-top_10_words %>%
+top_20_words %>%
   mutate(word = reorder(word, n)) %>%
   ggplot(aes(x = word, y = n, fill = word)) +
   geom_col(show.legend = FALSE) +
@@ -137,6 +145,8 @@ top_10_words %>%
   ylab("Count") +
   coord_flip()
 ```
+
+# Plot top 20 hash tag frequencies
 
 ```{r}
 us_tweets %>%
@@ -159,8 +169,9 @@ top_20_hash %>%
   coord_flip()
 ```
 
+# Extract emojis from tweets
+
 ```{r}
-#library(DataCombine)
 emojis <- read.csv("emoji_dictionary.csv", header = TRUE)
 emoji_names <- emojis %>%
   mutate(Name = str_replace_all(Name, " ", ""))
@@ -191,14 +202,14 @@ us_tweets %>%
   emoji_counts
 ```
 
-## Grab top 20 emojis
+# Grab top 20 emojis
 
 ```{r}
 top_20_emoji <- emoji_counts %>%
   top_n(20, n)
 ```
 
-## Convert back to emoji text & grab top 10 emojis
+# Convert back to emoji text & grab top 10 emojis
 
 ```{r}
 top_20_names <- c()
@@ -219,7 +230,8 @@ top_10_emoji <- top_20_emoji %>%
   top_n(10, n)
 ```
 
-## Plot top 20 emojis
+# Plot top 20 emojis
+
 ```{r}
 top_20_emoji %>%
   mutate(word = reorder(word, n)) %>%
@@ -231,7 +243,8 @@ top_20_emoji %>%
   coord_flip()
 ```
 
-## Plot top 10 emojis
+# Plot top 10 emojis
+
 ```{r}
 top_10_emoji %>%
   mutate(word = reorder(word, n)) %>%
@@ -242,7 +255,8 @@ top_10_emoji %>%
   ylab("Count") +
   coord_flip()
 ```
-## Plot tweets on US states map
+
+# Plot tweets on US states map
 
 ```{r}
 # plot state boundaries
