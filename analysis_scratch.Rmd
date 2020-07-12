@@ -1,5 +1,5 @@
 ---
-title: "Final Project Analysis"
+title: "Defund Police Twitter Analysis"
 author: "Caitlin Moroney"
 date: "7/6/2020"
 output: html_document
@@ -146,7 +146,7 @@ top_20_words %>%
   coord_flip()
 ```
 
-# Plot top 20 hash tag frequencies
+# Plot top 20 hashtag frequencies
 
 ```{r}
 us_tweets %>%
@@ -172,85 +172,52 @@ top_20_hash %>%
 # Extract emojis from tweets
 
 ```{r}
-emojis <- read.csv("emoji_dictionary.csv", header = TRUE)
-emoji_names <- emojis %>%
-  mutate(Name = str_replace_all(Name, " ", ""))
-list_emoji_names <- emoji_names$Name
+emoji_codes <- rtweet::emojis
+emoji_codes %>%
+  mutate(escaped_codes = stringi::stri_escape_unicode(code),
+         num_backslash = str_count(escaped_codes, "\\\\")) %>%
+  arrange(desc(num_backslash)) ->
+  emoji_codes
 
-us_tweets$byte_text <- iconv(us_tweets$text, from = "latin1", to = "ascii", sub = "byte")
-```
+emoji_pattern <- str_c(paste0("\\Q", emoji_codes$code, "\\E"), collapse = "|")
 
-```{r}
-replaced_text <- c()
+text_emojis <- c()
 for (i in 1:nrow(us_tweets)) {
-  tweet <- us_tweets$byte_text[i]
-  for (i in 1:nrow(emojis)) {
-    pattern <- str_c("\\Q", emojis$R_Encoding[i], "\\E", collapse = "")
-    tweet <- str_replace_all(tweet, pattern, emojis$Name[i])
-  }
-  replaced_text <- append(replaced_text, tweet)
+  tweet <- us_tweets$text[i]
+  tweet_emojis <- unlist(str_extract_all(tweet, emoji_pattern))
+  tweet_emojis <- str_c(tweet_emojis, collapse = " ")
+  text_emojis <- append(text_emojis, tweet_emojis)
 }
 
-us_tweets$emoji_text <- replaced_text
+us_tweets$text_emoji <- text_emojis
 ```
 
+# Get emoji counts
+
 ```{r}
-us_tweets %>%
-  unnest_tokens(word, emoji_text, token = "words", to_lower = FALSE) %>%
-  filter(word %in% list_emoji_names) %>%
-  count(word) ->
-  emoji_counts
+tweet_emoji_tokens <- us_tweets %>%
+  unnest_tokens(word, text_emoji, token = "characters", to_lower = FALSE)
+
+emoji_tok_counts <- tweet_emoji_tokens %>%
+  count(text, word)
+
+corpus_emoji_counts <- emoji_tok_counts %>%
+  count(word)
 ```
 
-# Grab top 20 emojis
+# Grab & plot top 20 emojis
 
 ```{r}
-top_20_emoji <- emoji_counts %>%
+top_20_emojis <- corpus_emoji_counts %>%
   top_n(20, n)
-```
 
-# Convert back to emoji text & grab top 10 emojis
+top_20_emojis <- top_20_emojis %>%
+  inner_join(emoji_codes, by = c("word" = "code"))
 
-```{r}
-top_20_names <- c()
-for (i in 1:nrow(top_20_emoji)) {
-  emoji_name <- str_c(" ", top_20_emoji$word[i], " ", collapse = "")
-  top_20_names <- append(top_20_names, emoji_name)
-}
-
-top_20_emoji$Name <- top_20_names
-
-top_20_emoji %>%
-  inner_join(emojis, by = "Name") ->
-  top_20_emoji
-
-#top_20_emoji$emoji_symbol <- iconv(top_20_emoji$R_Encoding, from = "ascii", to = "latin1", sub = "byte")
-
-top_10_emoji <- top_20_emoji %>%
-  top_n(10, n)
-```
-
-# Plot top 20 emojis
-
-```{r}
-top_20_emoji %>%
-  mutate(word = reorder(word, n)) %>%
-  ggplot(aes(x = word, y = n, fill = word)) +
+top_20_emojis %>%
+  mutate(description = reorder(description, n)) %>%
+  ggplot(aes(x = description, y = n, fill = description)) +
   geom_col(show.legend = FALSE) +
-  scale_y_log10() +
-  xlab("Emoji") +
-  ylab("Count") +
-  coord_flip()
-```
-
-# Plot top 10 emojis
-
-```{r}
-top_10_emoji %>%
-  mutate(word = reorder(word, n)) %>%
-  ggplot(aes(x = word, y = n, fill = word)) +
-  geom_col(show.legend = FALSE) +
-  scale_y_log10() +
   xlab("Emoji") +
   ylab("Count") +
   coord_flip()
